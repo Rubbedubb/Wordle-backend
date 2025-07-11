@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
@@ -13,14 +14,21 @@ const io = new Server(server, {
   }
 });
 
-const games = {}; // { partyCode: { word: "glada", players: {} } }
+const games = {}; // { partyCode: { word: "glada", players: {}, hostId: "", started: false } }
+
+function generateWord() {
+  const wordList = ["glada", "spela", "orden", "stark", "bilen", "lampa", "kasta"];
+  return wordList[Math.floor(Math.random() * wordList.length)].toLowerCase();
+}
 
 io.on("connection", (socket) => {
   socket.on("join", ({ name, party }) => {
     if (!games[party]) {
       games[party] = {
-        word: "glada", // Testord
-        players: {}
+        word: generateWord(),
+        players: {},
+        hostId: socket.id,
+        started: false
       };
     }
 
@@ -30,9 +38,29 @@ io.on("connection", (socket) => {
     io.to(party).emit("message", `${name} gick med i party ${party}`);
   });
 
+  socket.on("startGame", ({ party }) => {
+    const game = games[party];
+    if (!game || socket.id !== game.hostId) return;
+
+    game.word = generateWord();
+    game.started = true;
+
+    io.to(party).emit("start", { word: game.word });
+  });
+
+  socket.on("restartGame", ({ party }) => {
+    const game = games[party];
+    if (!game || socket.id !== game.hostId) return;
+
+    game.word = generateWord();
+    game.started = false;
+
+    io.to(party).emit("restart", { word: game.word });
+  });
+
   socket.on("guess", ({ party, guess }) => {
     const game = games[party];
-    if (!game) return;
+    if (!game || !game.started) return;
 
     const feedback = checkGuess(guess, game.word);
     const name = game.players[socket.id] || "Okänd";
